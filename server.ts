@@ -6,7 +6,6 @@
 import express from 'express';
 import path from 'path';
 import { adminMock as admin, getFirestoreMock as getFirestore, readDb, writeDb } from './server/adminMock';
-import { createServer as createViteServer } from 'vite';
 import { analyzeIncidentReport } from './server/geminiService';
 import { calculatePriorityScore } from './src/lib/scoring';
 import { evaluateDuplicateCandidate, getDistanceInMeters } from './src/lib/duplicates';
@@ -845,6 +844,7 @@ async function startServer() {
   // Start dev server middleware or static assets serving
   if (!isProduction) {
     console.log('[CivicResolve Server] Starting in DEVELOPMENT mode with Vite middleware...');
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
