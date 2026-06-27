@@ -374,7 +374,7 @@ app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req
         if (authUser.role !== 'ADMIN') {
           return res.status(403).json({ error: 'Only Administrators can assign cases.' });
         }
-        const allowedStatuses = ['PENDING_ADMIN_REVIEW', 'RETURNED_TO_ADMIN', 'REOPENED'];
+        const allowedStatuses = ['PENDING_ADMIN_REVIEW', 'RETURNED_TO_ADMIN', 'REOPENED', 'SUBMITTED', 'AI_TRIAGED'];
         if (!allowedStatuses.includes(currentStatus)) {
           return res.status(400).json({ error: `Invalid transition from ${currentStatus} for action ADMIN_ASSIGN.` });
         }
@@ -418,7 +418,7 @@ app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req
         if (authUser.role !== 'ADMIN') {
           return res.status(403).json({ error: 'Only Administrators can reject cases.' });
         }
-        const allowedStatuses = ['PENDING_ADMIN_REVIEW', 'RETURNED_TO_ADMIN'];
+        const allowedStatuses = ['PENDING_ADMIN_REVIEW', 'RETURNED_TO_ADMIN', 'SUBMITTED', 'AI_TRIAGED'];
         if (!allowedStatuses.includes(currentStatus)) {
           return res.status(400).json({ error: `Invalid transition from ${currentStatus} for action ADMIN_REJECT.` });
         }
@@ -672,7 +672,8 @@ app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req
         if (authUser.role !== 'ADMIN') {
           return res.status(403).json({ error: 'Only Administrators can merge reports.' });
         }
-        if (currentStatus !== 'PENDING_ADMIN_REVIEW') {
+        const allowedStatuses = ['PENDING_ADMIN_REVIEW', 'SUBMITTED', 'AI_TRIAGED'];
+        if (!allowedStatuses.includes(currentStatus)) {
           return res.status(400).json({ error: `Invalid transition from ${currentStatus} for action ADMIN_MERGE_DUPLICATE.` });
         }
         if (!masterIncidentId) {
