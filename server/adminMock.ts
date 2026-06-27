@@ -6,6 +6,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { DEPARTMENTS_SEED, USERS_SEED, INCIDENTS_SEED, REPORTS_SEED, EVENTS_SEED } from './seedData';
+
 const isVercel = !!process.env.VERCEL;
 const dbPath = isVercel
   ? path.join('/tmp', 'db_mock.json')
@@ -14,36 +16,45 @@ const dbPath = isVercel
 // Ensure db_mock.json exists and is initialized
 let memoryDb: any = null;
 
+function getInitialPopulatedDb() {
+  const initialDb: any = {
+    users: {},
+    incidents: {},
+    reports: {},
+    incidentEvents: {},
+    workUpdates: {},
+    notifications: {},
+    departments: {}
+  };
+  try {
+    for (const dept of DEPARTMENTS_SEED) {
+      initialDb.departments[dept.id] = dept;
+    }
+    for (const user of USERS_SEED) {
+      initialDb.users[user.uid] = user;
+    }
+    for (const inc of INCIDENTS_SEED) {
+      initialDb.incidents[inc.id] = inc;
+    }
+    for (const rep of REPORTS_SEED) {
+      initialDb.reports[rep.id] = rep;
+    }
+    for (const evt of EVENTS_SEED) {
+      initialDb.incidentEvents[evt.id] = evt;
+    }
+  } catch (seedErr) {
+    console.error('Failed to populate initial DB with seeds:', seedErr);
+  }
+  return initialDb;
+}
+
 export function readDb() {
   if (memoryDb) {
     return memoryDb;
   }
 
-  // On Vercel, copy the bundled database file to /tmp/db_mock.json on first run
-  if (isVercel && !fs.existsSync(dbPath)) {
-    const bundledDbPath = path.join(process.cwd(), 'db_mock.json');
-    if (fs.existsSync(bundledDbPath)) {
-      try {
-        const bundledContent = fs.readFileSync(bundledDbPath, 'utf-8');
-        fs.writeFileSync(dbPath, bundledContent, 'utf-8');
-        memoryDb = JSON.parse(bundledContent);
-        return memoryDb;
-      } catch (copyErr) {
-        console.error('Failed to copy bundled DB to /tmp:', copyErr);
-      }
-    }
-  }
-
   if (!fs.existsSync(dbPath)) {
-    const initialDb = {
-      users: {},
-      incidents: {},
-      reports: {},
-      incidentEvents: {},
-      workUpdates: {},
-      notifications: {},
-      departments: {}
-    };
+    const initialDb = getInitialPopulatedDb();
     try {
       fs.writeFileSync(dbPath, JSON.stringify(initialDb, null, 2), 'utf-8');
     } catch (err) {
@@ -57,15 +68,7 @@ export function readDb() {
     return memoryDb;
   } catch (e) {
     console.error('Error reading mock DB, resetting:', e);
-    const initialDb = {
-      users: {},
-      incidents: {},
-      reports: {},
-      incidentEvents: {},
-      workUpdates: {},
-      notifications: {},
-      departments: {}
-    };
+    const initialDb = getInitialPopulatedDb();
     try {
       fs.writeFileSync(dbPath, JSON.stringify(initialDb, null, 2), 'utf-8');
     } catch (err) {
