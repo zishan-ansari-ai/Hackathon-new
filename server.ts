@@ -66,30 +66,25 @@ async function authenticateRequest(req: express.Request): Promise<{ uid: string;
   throw new Error('Unauthorized: No valid credentials provided.');
 }
 
-async function startServer() {
-  const app = express();
-  const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
-  const PORT = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535
-    ? configuredPort
-    : 3000;
-  const isProduction = process.env.NODE_ENV === 'production';
-  const demoApiEnabled = !isProduction || process.env.ALLOW_INSECURE_DEMO_API === 'true';
+const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
+const demoApiEnabled = !isProduction || process.env.ALLOW_INSECURE_DEMO_API === 'true';
 
-  // Base64 image previews can be ~33% larger than the selected file and the
-  // mock batch stores the URL in both report and incident documents.
-  // This safely accommodates the report form's existing 10 MB image limit.
-  app.use(express.json({ limit: '30mb' }));
+// Base64 image previews can be ~33% larger than the selected file and the
+// mock batch stores the URL in both report and incident documents.
+// This safely accommodates the report form's existing 10 MB image limit.
+app.use(express.json({ limit: '30mb' }));
 
-  // This project intentionally uses a local, file-backed Firebase simulation.
-  // Keep development frictionless, but prevent accidental public production use.
-  app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req, res, next) => {
-    if (!demoApiEnabled) {
-      return res.status(503).json({
-        error: 'The local demo API is disabled in production. Set ALLOW_INSECURE_DEMO_API=true only for an intentional demo deployment.'
-      });
-    }
-    return next();
-  });
+// This project intentionally uses a local, file-backed Firebase simulation.
+// Keep development frictionless, but prevent accidental public production use.
+app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req, res, next) => {
+  if (!demoApiEnabled) {
+    return res.status(503).json({
+      error: 'The local demo API is disabled in production. Set ALLOW_INSECURE_DEMO_API=true only for an intentional demo deployment.'
+    });
+  }
+  return next();
+});
 
   // Global Mock Database State Endpoint (for unified single-request client sync)
   app.get('/api/mock-db/all', (req, res) => {
@@ -841,6 +836,12 @@ async function startServer() {
     }
   });
 
+async function startServer() {
+  const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
+  const PORT = Number.isInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535
+    ? configuredPort
+    : 3000;
+
   // Start dev server middleware or static assets serving
   if (!isProduction) {
     console.log('[CivicResolve Server] Starting in DEVELOPMENT mode with Vite middleware...');
@@ -866,6 +867,10 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('[CivicResolve Server] Failed to start server:', err);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('[CivicResolve Server] Failed to start server:', err);
+  });
+}
+
+export default app;
