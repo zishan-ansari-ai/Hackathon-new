@@ -710,6 +710,7 @@ export default function AdminViews({ user }: AdminViewsProps) {
                               let d: string | null = null;
                               if (r === 'DEPARTMENT_MANAGER') {
                                 d = prompt('Assign department ID (roads, water, electrical, sanitation, general):', 'roads');
+                                if (d) d = d.trim().toLowerCase();
                               }
                               handleRoleUpdate(u.uid, r, d);
                             }}

@@ -352,18 +352,32 @@ export async function syncLocalDBWithServer() {
   }
 }
 
-// Monkey patch fetch to trigger local DB sync and refresh poll after updates
-const originalFetch = window.fetch;
-window.fetch = async function(input, init) {
-  const res = await originalFetch(input, init);
-  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  if (url.includes('/api/transition') || url.includes('/api/mock-db')) {
-    setTimeout(() => {
-      triggerGlobalPoll();
-    }, 200);
-  }
-  return res;
-};
+if (typeof window !== 'undefined') {
+  // Monkey patch fetch to trigger local DB sync and refresh poll after updates
+  const originalFetch = window.fetch;
+  window.fetch = async function(input, init) {
+    const res = await originalFetch(input, init);
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes('/api/transition') || (url.includes('/api/mock-db') && !url.includes('/mock-db/all'))) {
+      // Only trigger poll for write actions; ignore getDoc and getDocs reads
+      let isRead = false;
+      if (init && init.body) {
+        try {
+          const bodyObj = JSON.parse(init.body.toString());
+          if (bodyObj.action === 'getDoc' || bodyObj.action === 'getDocs') {
+            isRead = true;
+          }
+        } catch (e) {}
+      }
+      if (!isRead) {
+        setTimeout(() => {
+          triggerGlobalPoll();
+        }, 200);
+      }
+    }
+    return res;
+  };
+}
 
 export async function getDoc(docRef: any) {
   const res = await fetch('/api/mock-db', {

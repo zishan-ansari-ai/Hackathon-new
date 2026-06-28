@@ -23,6 +23,8 @@ export default function MyReports({ user }: MyReportsProps) {
   useEffect(() => {
     if (!user) return;
 
+    let unsubscribeInc: (() => void) | null = null;
+
     // Load incidents where either creator matches or we fetch all reports and cross reference.
     // To keep it clean and performant, we can subscribe to all reports for reporterId, then fetch their matching incidents.
     // Or we can load all incidents and filter client-side, or query 'reports' collection first.
@@ -38,6 +40,11 @@ export default function MyReports({ user }: MyReportsProps) {
         }
       });
 
+      if (unsubscribeInc) {
+        unsubscribeInc();
+        unsubscribeInc = null;
+      }
+
       if (incidentIds.length === 0) {
         setIncidents([]);
         setLoading(false);
@@ -48,7 +55,7 @@ export default function MyReports({ user }: MyReportsProps) {
       // Firestore 'in' query has 10 limit, so let's fetch all incidents and filter in memory, or query dynamically.
       // Fetching all incidents is very robust for a hackathon sandbox.
       const incQuery = query(collection(db, 'incidents'));
-      const unsubscribeInc = onSnapshot(incQuery, (incSnap) => {
+      unsubscribeInc = onSnapshot(incQuery, (incSnap) => {
         const list: Incident[] = [];
         incSnap.forEach(docSnap => {
           const inc = { id: docSnap.id, ...docSnap.data() } as Incident;
@@ -59,14 +66,17 @@ export default function MyReports({ user }: MyReportsProps) {
         setIncidents(list);
         setLoading(false);
       });
-
-      return () => unsubscribeInc();
     }, (error) => {
       console.error('[CivicResolve MyReports] Error loading reports:', error);
       setLoading(false);
     });
 
-    return () => unsubscribeReports();
+    return () => {
+      unsubscribeReports();
+      if (unsubscribeInc) {
+        unsubscribeInc();
+      }
+    };
   }, [user]);
 
   if (!user) {
