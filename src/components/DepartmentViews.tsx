@@ -6,10 +6,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, storage } from '../lib/firebase';
 import { collection, onSnapshot, query, where, updateDoc, doc, addDoc } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { useRouter } from '../lib/router';
 import { Incident, UserProfile, IncidentEvent, IncidentStatus, WorkUpdate } from '../types';
 import { toast } from './Toast';
-import { HardHat, List, Play, Check, RefreshCw, Send, Image, MessageSquare, AlertTriangle, Calendar, Clock } from 'lucide-react';
+import { HardHat, List, Play, Check, RefreshCw, Send, Image, MessageSquare, AlertTriangle, Calendar, Clock, Upload } from 'lucide-react';
 import { EmptyState, PriorityIndicator, SLAIndicator, StatusBadge } from './ui/CivicUI';
 
 interface DepartmentViewsProps {
@@ -30,6 +31,26 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
   const [submittingNote, setSubmittingNote] = useState(false);
   const [returningAdmin, setReturningAdmin] = useState(false);
   const [returnReason, setReturnReason] = useState('');
+
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) { // 10MB Limit
+        toast('File size exceeds 10MB limit', 'error');
+        return;
+      }
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Loaded department queue
   useEffect(() => {
@@ -166,7 +187,7 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
       return;
     }
 
-    if (isFinalResolution && !evidenceUrl.trim()) {
+    if (isFinalResolution && !evidenceUrl.trim() && !imageFile) {
       toast('Uploading photo proof of completed repairs is mandatory for closure requests.', 'warning');
       return;
     }
@@ -174,6 +195,38 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
     try {
       setSubmittingNote(true);
       toast(isFinalResolution ? 'Submitting resolution request...' : 'Adding progress notes to council registry...', 'info');
+
+      let finalEvidenceUrl = evidenceUrl;
+
+      // Handle actual image upload if a file is selected
+      if (imageFile) {
+        try {
+          const storageRef = ref(storage, `resolutions/${Date.now()}_${imageFile.name}`);
+          const uploadTask = uploadBytesResumable(storageRef, imageFile);
+          
+          await new Promise<void>((resolve, reject) => {
+            uploadTask.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                setUploadProgress(Math.round(progress));
+              }, 
+              (error) => {
+                console.error('[CivicResolve Storage] upload failed:', error);
+                reject(error);
+              }, 
+              () => {
+                getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+                  finalEvidenceUrl = downloadURL;
+                  resolve();
+                });
+              }
+            );
+          });
+        } catch (storageErr) {
+          console.warn('[CivicResolve Storage] Storage upload failed, falling back to local file preview...', storageErr);
+          finalEvidenceUrl = imagePreview || finalEvidenceUrl;
+        }
+      }
 
       const action = isFinalResolution ? 'DEPT_SUBMIT_RESOLVE' : 'DEPT_UPDATE_PROGRESS';
       const res = await fetch('/api/transition', {
@@ -189,7 +242,7 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
           incidentId: activeIncident.id,
           action,
           notes: workNote,
-          evidenceUrl: evidenceUrl || undefined
+          evidenceUrl: finalEvidenceUrl || undefined
         })
       });
       const data = await res.json();
@@ -197,6 +250,9 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
         toast(isFinalResolution ? 'Resolution verification request submitted!' : 'Progress note added successfully!', 'success');
         setWorkNote('');
         setEvidenceUrl('');
+        setImageFile(null);
+        setImagePreview(null);
+        setUploadProgress(null);
         setActiveIncident(null);
       } else {
         toast('Update failed: ' + data.error, 'error');
@@ -293,6 +349,9 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
                       setActiveIncident(inc);
                       setWorkNote('');
                       setEvidenceUrl('');
+                      setImageFile(null);
+                      setImagePreview(null);
+                      setUploadProgress(null);
                     }}
                     className={`civic-panel flex w-full flex-col items-start justify-between gap-4 p-5 text-left transition-colors hover:border-[#8aa9bd] hover:bg-slate-50 sm:flex-row ${
                       activeIncident?.id === inc.id ? 'border-[#174f78] ring-2 ring-[#d9e8f1]' : ''
@@ -398,25 +457,63 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
                         className="civic-control w-full p-3 text-xs"
                         placeholder="Write repair updates: e.g. Crew arrived on site, asphalt cutting completed, awaiting concrete mix..."
                         required
-                      ></textarea>
-
-                      {/* Evidence Photo URL mockup for repair resolution */}
-                      <div className="space-y-1.5">
-                        <label htmlFor="department-evidence-url" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block font-mono flex items-center gap-1">
-                          <Image className="w-3.5 h-3.5 text-slate-400" /> Evidence Photo URL (Required for final completion)
+                      ></textarea>                      {/* Evidence Photo Upload or Dropdown */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block font-mono flex items-center gap-1">
+                          <Image className="w-3.5 h-3.5 text-slate-400" /> Repair Evidence Photo (Required for final completion)
                         </label>
-                        <select
-                          id="department-evidence-url"
-                          value={evidenceUrl}
-                          onChange={(e) => setEvidenceUrl(e.target.value)}
-                          className="civic-control w-full p-2 text-xs"
-                        >
-                          <option value="">-- Choose resolution placeholder photo --</option>
-                          <option value="https://images.unsplash.com/photo-1515162305285-0293e4767cc2?auto=format&fit=crop&w=600&q=80">Road repaved patch (Unsplash)</option>
-                          <option value="https://images.unsplash.com/photo-1509023464722-18d996393ca8?auto=format&fit=crop&w=600&q=80">Streetlight glowing (Unsplash)</option>
-                          <option value="https://images.unsplash.com/photo-1542013936693-8848e5744a70?auto=format&fit=crop&w=600&q=80">Water pipe fixed (Unsplash)</option>
-                          <option value="https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?auto=format&fit=crop&w=600&q=80">Sanitation bin cleared (Unsplash)</option>
-                        </select>
+
+                        {/* File upload input */}
+                        <div className="border border-dashed border-slate-300 rounded-xl p-4 text-center hover:bg-slate-50 transition cursor-pointer relative">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            aria-label="Upload repair evidence image file"
+                          />
+                          {imagePreview ? (
+                            <div className="space-y-2">
+                              <img
+                                src={imagePreview}
+                                alt="Repair evidence preview"
+                                className="mx-auto max-h-28 rounded-lg object-cover"
+                              />
+                              <p className="text-[10px] text-slate-500">{imageFile?.name}</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <Upload className="w-5 h-5 text-slate-400 mx-auto" />
+                              <p className="text-[11px] text-slate-600 font-medium">Click or drag photo here to upload real evidence</p>
+                              <p className="text-[9px] text-slate-400">Max size: 10MB</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {uploadProgress !== null && (
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                            <div className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                          </div>
+                        )}
+
+                        {/* Or placeholder select */}
+                        {!imageFile && (
+                          <div className="space-y-1">
+                            <p className="text-[9px] font-semibold text-slate-400 uppercase text-center font-mono">— OR choose placeholder —</p>
+                            <select
+                              id="department-evidence-url"
+                              value={evidenceUrl}
+                              onChange={(e) => setEvidenceUrl(e.target.value)}
+                              className="civic-control w-full p-2 text-xs"
+                            >
+                              <option value="">-- Choose resolution placeholder photo --</option>
+                              <option value="https://images.unsplash.com/photo-1515162305285-0293e4767cc2?auto=format&fit=crop&w=600&q=80">Road repaved patch (Unsplash)</option>
+                              <option value="https://images.unsplash.com/photo-1509023464722-18d996393ca8?auto=format&fit=crop&w=600&q=80">Streetlight glowing (Unsplash)</option>
+                              <option value="https://images.unsplash.com/photo-1542013936693-8848e5744a70?auto=format&fit=crop&w=600&q=80">Water pipe fixed (Unsplash)</option>
+                              <option value="https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?auto=format&fit=crop&w=600&q=80">Sanitation bin cleared (Unsplash)</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
 
                       {/* Actions */}
@@ -431,7 +528,7 @@ export default function DepartmentViews({ user }: DepartmentViewsProps) {
                         <button
                           type="button"
                           onClick={(e) => handleAddWorkUpdate(e, true)}
-                          disabled={submittingNote || !evidenceUrl}
+                          disabled={submittingNote || (!evidenceUrl && !imageFile)}
                           className="px-3 py-2 bg-slate-900 hover:bg-emerald-600 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-bold rounded-xl transition flex items-center justify-center gap-1"
                         >
                           <Send className="w-3.5 h-3.5" /> Submit Resolution

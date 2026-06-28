@@ -66,11 +66,48 @@ function triggerAuthListeners() {
 }
 
 export async function signInWithEmailAndPassword(authObj: any, email: string, password: any) {
-  const res = await fetch('/api/mock-auth/login', {
+  // Sync first to make sure any local users/data are uploaded
+  await syncLocalDBWithServer();
+
+  let res = await fetch('/api/mock-auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
+
+  // Self-heal: If user is not found on server (container reset), restore from local storage
+  if (res.status === 401) {
+    try {
+      const localDbStr = localStorage.getItem('civicresolve_local_db');
+      if (localDbStr) {
+        const localDb = JSON.parse(localDbStr);
+        const usersCol = localDb['users'] || {};
+        const localUser = Object.values(usersCol).find((u: any) => u.email === email);
+        if (localUser) {
+          console.log(`[CivicResolve Sync] Found registered user ${email} in local storage. Restoring to server...`);
+          await fetch('/api/mock-db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'setDoc',
+              collectionName: 'users',
+              docId: (localUser as any).uid,
+              data: localUser
+            })
+          });
+          // Retry login
+          res = await fetch('/api/mock-auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error during local user recovery:', err);
+    }
+  }
+
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.error || 'Authentication failed');
@@ -100,6 +137,8 @@ export async function createUserWithEmailAndPassword(authObj: any, email: string
     updatedAt: new Date().toISOString(),
     isActive: true
   };
+
+  saveToLocalDB('users', uid, user);
 
   const res = await fetch('/api/mock-db', {
     method: 'POST',
@@ -215,6 +254,117 @@ function getCurrentUserToken() {
   return '';
 }
 
+// Local storage cache for offline/serverless durability
+function saveToLocalDB(collectionName: string, docId: string, data: any) {
+  try {
+    const localDbStr = localStorage.getItem('civicresolve_local_db');
+    const localDb = localDbStr ? JSON.parse(localDbStr) : {};
+    if (!localDb[collectionName]) localDb[collectionName] = {};
+    localDb[collectionName][docId] = data;
+    localStorage.setItem('civicresolve_local_db', JSON.stringify(localDb));
+  } catch (e) {
+    console.error('Failed to save to local DB:', e);
+  }
+}
+
+function deleteFromLocalDB(collectionName: string, docId: string) {
+  try {
+    const localDbStr = localStorage.getItem('civicresolve_local_db');
+    if (localDbStr) {
+      const localDb = JSON.parse(localDbStr);
+      if (localDb[collectionName]) {
+        delete localDb[collectionName][docId];
+        localStorage.setItem('civicresolve_local_db', JSON.stringify(localDb));
+      }
+    }
+  } catch (e) {
+    console.error('Failed to delete from local DB:', e);
+  }
+}
+
+let isSyncing = false;
+export async function syncLocalDBWithServer() {
+  if (isSyncing) return;
+  try {
+    const localDbStr = localStorage.getItem('civicresolve_local_db');
+    if (!localDbStr) return;
+    const localDb = JSON.parse(localDbStr);
+    
+    const collections = Object.keys(localDb);
+    if (collections.length === 0) return;
+
+    isSyncing = true;
+    
+    const res = await fetch('/api/mock-db/all', {
+      headers: {
+        'Authorization': `Bearer ${getCurrentUserToken()}`
+      }
+    });
+    if (!res.ok) return;
+    const payload = await res.json();
+    const serverDb = payload.db || {};
+
+    const operations: any[] = [];
+    
+    for (const colName of collections) {
+      const colDocs = localDb[colName] || {};
+      const serverColDocs = serverDb[colName] || {};
+      
+      for (const [docId, docData] of Object.entries(colDocs)) {
+        const serverDoc = serverColDocs[docId];
+        const localUpdatedAt = (docData as any)?.updatedAt ? new Date((docData as any).updatedAt).getTime() : 0;
+        const serverUpdatedAt = (serverDoc as any)?.updatedAt ? new Date((serverDoc as any).updatedAt).getTime() : 0;
+
+        if (!serverDoc || localUpdatedAt > serverUpdatedAt) {
+          operations.push({
+            action: 'setDoc',
+            collectionName: colName,
+            docId,
+            data: docData
+          });
+        }
+      }
+    }
+
+    if (operations.length > 0) {
+      console.log(`[CivicResolve Sync] Restoring ${operations.length} missing/updated documents to server mock DB...`);
+      const batchSize = 25;
+      for (let i = 0; i < operations.length; i += batchSize) {
+        const batchOps = operations.slice(i, i + batchSize);
+        await fetch('/api/mock-db', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getCurrentUserToken()}`
+          },
+          body: JSON.stringify({
+            action: 'batch',
+            operations: batchOps
+          })
+        });
+      }
+      console.log('[CivicResolve Sync] Synchronization complete!');
+    }
+  } catch (e) {
+    console.error('[CivicResolve Sync] Synchronization failed:', e);
+  } finally {
+    isSyncing = false;
+  }
+}
+
+// Monkey patch fetch to trigger local DB sync and refresh poll after updates
+const originalFetch = window.fetch;
+window.fetch = async function(input, init) {
+  const res = await originalFetch(input, init);
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+  if (url.includes('/api/transition') || url.includes('/api/mock-db')) {
+    setTimeout(() => {
+      triggerGlobalPoll();
+    }, 200);
+  }
+  return res;
+};
+
 export async function getDoc(docRef: any) {
   const res = await fetch('/api/mock-db', {
     method: 'POST',
@@ -260,6 +410,17 @@ export async function getDocs(queryOrColRef: any) {
 }
 
 export async function setDoc(docRef: any, data: any, options?: any) {
+  let finalData = data;
+  if (options && options.merge) {
+    try {
+      const localDbStr = localStorage.getItem('civicresolve_local_db');
+      const localDb = localDbStr ? JSON.parse(localDbStr) : {};
+      const current = (localDb[docRef.collectionName] || {})[docRef.docId] || {};
+      finalData = { ...current, ...data };
+    } catch (e) {}
+  }
+  saveToLocalDB(docRef.collectionName, docRef.docId, finalData);
+
   const res = await fetch('/api/mock-db', {
     method: 'POST',
     headers: {
@@ -297,10 +458,19 @@ export async function addDoc(collectionRef: any, data: any) {
   if (!res.ok) {
     throw new Error(resData.error || 'Failed to add document');
   }
+  saveToLocalDB(collectionRef.collectionName, resData.id, { ...data, id: resData.id });
   return { id: resData.id };
 }
 
 export async function updateDoc(docRef: any, data: any) {
+  try {
+    const localDbStr = localStorage.getItem('civicresolve_local_db');
+    const localDb = localDbStr ? JSON.parse(localDbStr) : {};
+    const current = (localDb[docRef.collectionName] || {})[docRef.docId] || {};
+    const merged = { ...current, ...data };
+    saveToLocalDB(docRef.collectionName, docRef.docId, merged);
+  } catch (e) {}
+
   const res = await fetch('/api/mock-db', {
     method: 'POST',
     headers: {
@@ -321,6 +491,8 @@ export async function updateDoc(docRef: any, data: any) {
 }
 
 export async function deleteDoc(docRef: any) {
+  deleteFromLocalDB(docRef.collectionName, docRef.docId);
+
   const res = await fetch('/api/mock-db', {
     method: 'POST',
     headers: {
@@ -341,17 +513,46 @@ export async function deleteDoc(docRef: any) {
 
 export function writeBatch(dbObj: any) {
   const operations: any[] = [];
+  const localOps: { action: string, collectionName: string, docId: string, data?: any, options?: any }[] = [];
   return {
     set(docRef: any, data: any, options?: any) {
       operations.push({ action: 'setDoc', collectionName: docRef.collectionName, docId: docRef.docId, data, options });
+      localOps.push({ action: 'set', collectionName: docRef.collectionName, docId: docRef.docId, data, options });
     },
     update(docRef: any, data: any) {
       operations.push({ action: 'updateDoc', collectionName: docRef.collectionName, docId: docRef.docId, data });
+      localOps.push({ action: 'update', collectionName: docRef.collectionName, docId: docRef.docId, data });
     },
     delete(docRef: any) {
       operations.push({ action: 'deleteDoc', collectionName: docRef.collectionName, docId: docRef.docId });
+      localOps.push({ action: 'delete', collectionName: docRef.collectionName, docId: docRef.docId });
     },
     async commit() {
+      try {
+        const localDbStr = localStorage.getItem('civicresolve_local_db');
+        const localDb = localDbStr ? JSON.parse(localDbStr) : {};
+        
+        for (const op of localOps) {
+          if (!localDb[op.collectionName]) localDb[op.collectionName] = {};
+          if (op.action === 'set') {
+            const current = localDb[op.collectionName][op.docId] || {};
+            if (op.options && op.options.merge) {
+              localDb[op.collectionName][op.docId] = { ...current, ...op.data };
+            } else {
+              localDb[op.collectionName][op.docId] = op.data;
+            }
+          } else if (op.action === 'update') {
+            const current = localDb[op.collectionName][op.docId] || {};
+            localDb[op.collectionName][op.docId] = { ...current, ...op.data };
+          } else if (op.action === 'delete') {
+            delete localDb[op.collectionName][op.docId];
+          }
+        }
+        localStorage.setItem('civicresolve_local_db', JSON.stringify(localDb));
+      } catch (e) {
+        console.error('Batch local save failed:', e);
+      }
+
       const res = await fetch('/api/mock-db', {
         method: 'POST',
         headers: {
@@ -382,84 +583,119 @@ const listeners = new Set<{
 }>();
 
 let globalPollStarted = false;
+let pollTimeoutId: any = null;
+
+async function runPoll() {
+  if (listeners.size === 0) {
+    globalPollStarted = false;
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/mock-db/all', {
+      headers: {
+        'Authorization': `Bearer ${getCurrentUserToken()}`
+      }
+    });
+    if (res.ok) {
+      const payload = await res.json();
+      const dbData = payload.db || {};
+
+      // Merge server changes into local DB
+      try {
+        const localDbStr = localStorage.getItem('civicresolve_local_db');
+        const localDb = localDbStr ? JSON.parse(localDbStr) : {};
+        let localModified = false;
+
+        for (const colName of Object.keys(dbData)) {
+          if (!localDb[colName]) {
+            localDb[colName] = {};
+          }
+          for (const [docId, serverDoc] of Object.entries(dbData[colName])) {
+            const localDoc = localDb[colName][docId];
+            const localUpdatedAt = localDoc?.updatedAt ? new Date(localDoc.updatedAt).getTime() : 0;
+            const serverUpdatedAt = (serverDoc as any)?.updatedAt ? new Date((serverDoc as any).updatedAt).getTime() : 0;
+            
+            if (!localDoc || serverUpdatedAt > localUpdatedAt) {
+              localDb[colName][docId] = serverDoc;
+              localModified = true;
+            }
+          }
+        }
+
+        if (localModified) {
+          localStorage.setItem('civicresolve_local_db', JSON.stringify(localDb));
+        }
+      } catch (e) {
+        console.error('[CivicResolve Sync] Error merging server updates to local DB:', e);
+      }
+
+      listeners.forEach(listener => {
+        try {
+          let dataToCompare: any;
+          let snapshot: any;
+
+          if (listener.type === 'document') {
+            const col = dbData[listener.collectionName] || {};
+            const docData = col[listener.docId!] || null;
+            dataToCompare = docData;
+            snapshot = new MockDocumentSnapshot(listener.docId!, docData);
+          } else {
+            const col = dbData[listener.collectionName] || {};
+            let docs = Object.values(col);
+
+            if (listener.constraints && Array.isArray(listener.constraints)) {
+              for (const con of listener.constraints) {
+                if (con.type === 'where') {
+                  const { field, operator, value } = con;
+                  docs = docs.filter((doc: any) => {
+                    const val = doc[field];
+                    if (operator === '==') return val === value;
+                    if (operator === '>=') return val >= value;
+                    if (operator === '<=') return val <= value;
+                    if (operator === 'array-contains') return Array.isArray(val) && val.includes(value);
+                    return true;
+                  });
+                }
+                if (con.type === 'limit') {
+                  docs = docs.slice(0, con.value);
+                }
+              }
+            }
+
+            dataToCompare = docs;
+            const snaps = docs.map((d: any) => new MockDocumentSnapshot(d.id || d.uid || '', d));
+            snapshot = new MockQuerySnapshot(snaps);
+          }
+
+          const currentJson = JSON.stringify(dataToCompare);
+          if (currentJson !== listener.lastJson) {
+            listener.lastJson = currentJson;
+            listener.callback(snapshot);
+          }
+        } catch (err) {
+          console.error('[CivicResolve Sync] Listener update error:', err);
+        }
+      });
+    }
+  } catch (err) {
+    console.error('[CivicResolve Sync] Global poll error:', err);
+  }
+
+  // Schedule next poll in 3 seconds
+  if (pollTimeoutId) clearTimeout(pollTimeoutId);
+  pollTimeoutId = setTimeout(runPoll, 3000);
+}
+
+export function triggerGlobalPoll() {
+  if (pollTimeoutId) clearTimeout(pollTimeoutId);
+  runPoll();
+}
 
 function startGlobalPoll() {
   if (globalPollStarted) return;
   globalPollStarted = true;
-
-  const poll = async () => {
-    if (listeners.size === 0) {
-      globalPollStarted = false;
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/mock-db/all', {
-        headers: {
-          'Authorization': `Bearer ${getCurrentUserToken()}`
-        }
-      });
-      if (res.ok) {
-        const payload = await res.json();
-        const dbData = payload.db || {};
-
-        listeners.forEach(listener => {
-          try {
-            let dataToCompare: any;
-            let snapshot: any;
-
-            if (listener.type === 'document') {
-              const col = dbData[listener.collectionName] || {};
-              const docData = col[listener.docId!] || null;
-              dataToCompare = docData;
-              snapshot = new MockDocumentSnapshot(listener.docId!, docData);
-            } else {
-              const col = dbData[listener.collectionName] || {};
-              let docs = Object.values(col);
-
-              if (listener.constraints && Array.isArray(listener.constraints)) {
-                for (const con of listener.constraints) {
-                  if (con.type === 'where') {
-                    const { field, operator, value } = con;
-                    docs = docs.filter((doc: any) => {
-                      const val = doc[field];
-                      if (operator === '==') return val === value;
-                      if (operator === '>=') return val >= value;
-                      if (operator === '<=') return val <= value;
-                      if (operator === 'array-contains') return Array.isArray(val) && val.includes(value);
-                      return true;
-                    });
-                  }
-                  if (con.type === 'limit') {
-                    docs = docs.slice(0, con.value);
-                  }
-                }
-              }
-
-              dataToCompare = docs;
-              const snaps = docs.map((d: any) => new MockDocumentSnapshot(d.id || d.uid || '', d));
-              snapshot = new MockQuerySnapshot(snaps);
-            }
-
-            const currentJson = JSON.stringify(dataToCompare);
-            if (currentJson !== listener.lastJson) {
-              listener.lastJson = currentJson;
-              listener.callback(snapshot);
-            }
-          } catch (err) {
-            console.error('[CivicResolve Sync] Listener update error:', err);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('[CivicResolve Sync] Global poll error:', err);
-    }
-
-    // Poll every 3 seconds
-    setTimeout(poll, 3000);
-  };
-
-  poll();
+  runPoll();
 }
 
 export function onSnapshot(queryOrDocRef: any, callback: any, errorCallback?: any) {
@@ -507,6 +743,7 @@ export function onSnapshot(queryOrDocRef: any, callback: any, errorCallback?: an
       .catch(handleError);
   }
 
+  syncLocalDBWithServer();
   startGlobalPoll();
 
   return () => {
