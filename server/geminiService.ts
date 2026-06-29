@@ -129,6 +129,19 @@ export function runFallbackTriage(description: string, submittedCategory: string
     observedConditions.push('High-traffic crossing or healthcare zone');
   }
 
+  // If description matching didn't yield a department, map from category
+  if (suggestedDepartmentId === 'general_admin' && category) {
+    if (category === 'POTHOLE' || category === 'ROAD_DAMAGE') {
+      suggestedDepartmentId = 'roads';
+    } else if (category === 'BROKEN_STREETLIGHT' || category === 'ELECTRICAL_HAZARD') {
+      suggestedDepartmentId = 'electrical';
+    } else if (category === 'WATER_LEAKAGE' || category === 'DAMAGED_PIPE' || category === 'DRAINAGE_ISSUE') {
+      suggestedDepartmentId = 'water';
+    } else if (category === 'GARBAGE_OVERFLOW' || category === 'ILLEGAL_DUMPING' || category === 'WASTE_MANAGEMENT') {
+      suggestedDepartmentId = 'sanitation';
+    }
+  }
+
   // Validate Evidence Quality based on length or description detail
   let evidenceQuality: ValidatedAITriage['evidenceQuality'] = 'FAIR';
   if (description.length > 100) {
@@ -246,8 +259,29 @@ Ensure you output ONLY the valid JSON block without any markdown formatting arou
     const safetyRisks = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
     const evidenceQualities = ["POOR", "FAIR", "GOOD", "EXCELLENT"];
 
-    const validatedCategory = categories.includes(result.category) ? result.category : "UNCLEAR";
-    const validatedDept = departments.includes(result.suggestedDepartmentId) ? result.suggestedDepartmentId : "general_admin";
+    const rawDept = typeof result.suggestedDepartmentId === 'string'
+      ? result.suggestedDepartmentId.trim().toLowerCase()
+      : '';
+    const rawCat = typeof result.category === 'string'
+      ? result.category.trim().toUpperCase()
+      : '';
+
+    const validatedCategory = categories.includes(rawCat) ? rawCat : "UNCLEAR";
+    let validatedDept = departments.includes(rawDept) ? rawDept as any : "general_admin";
+
+    // Auto-map if department is general_admin but we have a specific category
+    if (validatedDept === 'general_admin' && validatedCategory) {
+      if (validatedCategory === 'POTHOLE' || validatedCategory === 'ROAD_DAMAGE') {
+        validatedDept = 'roads';
+      } else if (validatedCategory === 'BROKEN_STREETLIGHT' || validatedCategory === 'ELECTRICAL_HAZARD') {
+        validatedDept = 'electrical';
+      } else if (validatedCategory === 'WATER_LEAKAGE' || validatedCategory === 'DAMAGED_PIPE' || validatedCategory === 'DRAINAGE_ISSUE') {
+        validatedDept = 'water';
+      } else if (validatedCategory === 'GARBAGE_OVERFLOW' || validatedCategory === 'ILLEGAL_DUMPING' || validatedCategory === 'WASTE_MANAGEMENT') {
+        validatedDept = 'sanitation';
+      }
+    }
+
     const validatedRisk = safetyRisks.includes(result.safetyRisk) ? result.safetyRisk : "MEDIUM";
     const validatedEvidence = evidenceQualities.includes(result.evidenceQuality) ? result.evidenceQuality : "FAIR";
 

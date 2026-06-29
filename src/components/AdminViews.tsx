@@ -33,6 +33,10 @@ export default function AdminViews({ user }: AdminViewsProps) {
   const [rejectionReason, setRejectionReason] = useState('');
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
+  // Routing and priority overrides for triage
+  const [selectedDepts, setSelectedDepts] = useState<Record<string, string>>({});
+  const [selectedPriorities, setSelectedPriorities] = useState<Record<string, PriorityLevel>>({});
+
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') return;
 
@@ -465,6 +469,44 @@ export default function AdminViews({ user }: AdminViewsProps) {
                           </div>
                         </div>
 
+                        {/* Dispatch Override Settings */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/60 text-left">
+                          <div className="space-y-1.5">
+                            <label htmlFor={`dept-assign-${inc.id}`} className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
+                              Dispatch Department
+                            </label>
+                            <select
+                              id={`dept-assign-${inc.id}`}
+                              value={selectedDepts[inc.id] || inc.aiAnalysis.recommendedDepartmentId || 'general'}
+                              onChange={(e) => setSelectedDepts(prev => ({ ...prev, [inc.id]: e.target.value }))}
+                              className="w-full border border-slate-200 focus:outline-none focus:border-[#174f78] p-2 text-xs rounded-xl bg-white font-sans text-slate-700 font-medium"
+                            >
+                              <option value="roads">Roads & Maintenance</option>
+                              <option value="electrical">Electrical Services</option>
+                              <option value="water">Water Services</option>
+                              <option value="sanitation">Sanitation Department</option>
+                              <option value="general">General Administration</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label htmlFor={`priority-assign-${inc.id}`} className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block font-mono">
+                              Verify Urgency
+                            </label>
+                            <select
+                              id={`priority-assign-${inc.id}`}
+                              value={selectedPriorities[inc.id] || inc.aiAnalysis.urgencyLevel || 'MEDIUM'}
+                              onChange={(e) => setSelectedPriorities(prev => ({ ...prev, [inc.id]: e.target.value as PriorityLevel }))}
+                              className="w-full border border-slate-200 focus:outline-none focus:border-[#174f78] p-2 text-xs rounded-xl bg-white font-sans text-slate-700 font-medium"
+                            >
+                              <option value="LOW">Low Urgency</option>
+                              <option value="MEDIUM">Medium Urgency</option>
+                              <option value="HIGH">High Urgency</option>
+                              <option value="CRITICAL">Critical Urgency</option>
+                            </select>
+                          </div>
+                        </div>
+
                         {/* Actions block */}
                         <div className="civic-action-bar">
                           <button
@@ -478,8 +520,12 @@ export default function AdminViews({ user }: AdminViewsProps) {
                           </button>
 
                           <button
-                            onClick={() => handleTriageApproval(inc.id, inc.aiAnalysis.recommendedDepartmentId, inc.aiAnalysis.urgencyLevel)}
-                            className="civic-primary-button flex items-center gap-1 px-4 text-xs"
+                            onClick={() => {
+                              const dept = selectedDepts[inc.id] || inc.aiAnalysis.recommendedDepartmentId || 'general';
+                              const prio = selectedPriorities[inc.id] || inc.aiAnalysis.urgencyLevel || 'MEDIUM';
+                              handleTriageApproval(inc.id, dept, prio);
+                            }}
+                            className="civic-primary-button flex items-center gap-1 px-4 text-xs font-bold"
                           >
                             <Check className="w-4 h-4" /> Approve & Dispatch
                           </button>
