@@ -790,14 +790,43 @@ function readFileAsDataUrl(file: Blob): Promise<string> {
 }
 
 export function uploadBytes(refObj: any, file: any) {
-  return readFileAsDataUrl(file).then(downloadUrl => {
-    refObj.downloadUrl = downloadUrl;
+  return readFileAsDataUrl(file).then(async (base64) => {
+    try {
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64 })
+      });
+      const data = await res.json();
+      refObj.downloadUrl = data.url;
+    } catch (e) {
+      if (typeof window !== 'undefined') {
+        console.warn('[Mock Firebase Storage] Server upload failed, falling back to local base64:', e);
+      }
+      refObj.downloadUrl = base64;
+    }
     return { ref: refObj };
   });
 }
 
 export function uploadBytesResumable(refObj: any, file: any) {
-  const uploadedImage = readFileAsDataUrl(file);
+  const uploadedImage = readFileAsDataUrl(file).then(async (base64) => {
+    try {
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64 })
+      });
+      const data = await res.json();
+      return data.url;
+    } catch (e) {
+      if (typeof window !== 'undefined') {
+        console.warn('[Mock Firebase Storage] Server upload failed, falling back to local base64:', e);
+      }
+      return base64;
+    }
+  });
+
   const uploadTask = {
     snapshot: { ref: refObj },
     on(event: string, next: any, error?: any, complete?: any) {
@@ -812,8 +841,8 @@ export function uploadBytesResumable(refObj: any, file: any) {
         if (progress === 100) {
           clearInterval(interval);
           uploadedImage
-            .then(downloadUrl => {
-              refObj.downloadUrl = downloadUrl;
+            .then(url => {
+              refObj.downloadUrl = url;
               if (complete) complete();
             })
             .catch(uploadError => {

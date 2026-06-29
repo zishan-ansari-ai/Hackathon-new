@@ -89,7 +89,61 @@ app.use(['/api/mock-db', '/api/mock-auth', '/api/seed', '/api/transition'], (req
   app.get('/api/mock-db/all', (req, res) => {
     try {
       const dbData = readDb();
-      return res.json({ success: true, db: dbData });
+      // Strip large media collection to keep payload size extremely small
+      const { media, ...cleanDbData } = dbData;
+      return res.json({ success: true, db: cleanDbData });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET Media endpoint (decodes base64 content and serves directly)
+  app.get('/api/media/:mediaId', (req, res) => {
+    try {
+      const dbData = readDb();
+      const mediaItem = dbData.media?.[req.params.mediaId];
+      if (!mediaItem) {
+        return res.status(404).send('Media Not Found');
+      }
+
+      const match = mediaItem.match(/^data:(image\/[a-zA-Z+-]+);base64,(.+)$/);
+      if (match) {
+        const contentType = match[1];
+        const base64Data = match[2];
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Content-Length': imgBuffer.length,
+          'Cache-Control': 'public, max-age=31536000'
+        });
+        return res.end(imgBuffer);
+      } else {
+        return res.status(400).send('Invalid media format');
+      }
+    } catch (e: any) {
+      return res.status(500).send(e.message);
+    }
+  });
+
+  // POST Upload Media endpoint
+  app.post('/api/media/upload', (req, res) => {
+    try {
+      const { base64 } = req.body;
+      if (!base64) {
+        return res.status(400).json({ error: 'Base64 data is required.' });
+      }
+
+      const dbData = readDb();
+      if (!dbData.media) {
+        dbData.media = {};
+      }
+
+      const mediaId = 'med-' + Math.random().toString(36).substring(2, 9);
+      dbData.media[mediaId] = base64;
+      writeDb(dbData);
+
+      console.log(`[CivicResolve Media] Image uploaded successfully. Saved with ID: ${mediaId}`);
+      return res.json({ success: true, url: `/api/media/${mediaId}` });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

@@ -305,9 +305,9 @@
       "incidentCode": "CR-1007",
       "title": "Exposed Live Wires from Damaged Junction Box on Sidewalk",
       "category": "ELECTRICAL_HAZARD",
-      "status": "IN_PROGRESS",
-      "priorityScore": 73,
-      "priorityLevel": "HIGH",
+      "status": "ACCEPTED_BY_DEPARTMENT",
+      "priorityScore": 92,
+      "priorityLevel": "CRITICAL",
       "assignedDepartmentId": "electrical",
       "assignedDepartmentName": "Electrical Services",
       "assignedOfficerId": null,
@@ -333,7 +333,7 @@
       "isPublic": true,
       "containsSensitiveContent": false,
       "createdAt": "2026-06-23T18:30:00.000Z",
-      "updatedAt": "2026-06-28T17:44:47.186Z",
+      "updatedAt": "2026-06-24T08:00:00.000Z",
       "resolvedAt": null,
       "reopenedCount": 0
     },
@@ -453,9 +453,9 @@
       "incidentCode": "CR-1011",
       "title": "Damaged Guardrail on Mountain Pass Viewpoint",
       "category": "ROAD_DAMAGE",
-      "status": "ASSIGNED_TO_DEPARTMENT",
-      "priorityScore": 59,
-      "priorityLevel": "MEDIUM",
+      "status": "AI_TRIAGED",
+      "priorityScore": 72,
+      "priorityLevel": "HIGH",
       "assignedDepartmentId": "roads",
       "assignedDepartmentName": "Roads & Maintenance",
       "assignedOfficerId": null,
@@ -481,7 +481,7 @@
       "isPublic": true,
       "containsSensitiveContent": false,
       "createdAt": "2026-06-24T11:00:00.000Z",
-      "updatedAt": "2026-06-28T16:52:41.050Z",
+      "updatedAt": "2026-06-24T11:00:00.000Z",
       "resolvedAt": null,
       "reopenedCount": 0,
       "isPriorityManuallyAdjusted": true,
@@ -1368,6 +1368,56 @@
       "actorRole": "DEPARTMENT_MANAGER",
       "message": "Department submitted completion logs and uploaded repair evidence for inspection.",
       "createdAt": "2026-06-29T03:18:50.283Z"
+    },
+    "evt-gqtjbj4": {
+      "id": "evt-gqtjbj4",
+      "incidentId": "inc-test-transition-hojoevv",
+      "eventType": "ADMIN_ASSIGN",
+      "actorId": "demo-admin-id",
+      "actorName": "Arthur Pendelton",
+      "actorRole": "ADMIN",
+      "message": "Admin assigned case to department Roads & Maintenance. Priority level set to HIGH. Notes: \"Assigning to roads dept\"",
+      "createdAt": "2026-06-29T03:39:56.687Z"
+    },
+    "evt-lvznymx": {
+      "id": "evt-lvznymx",
+      "incidentId": "inc-test-transition-hojoevv",
+      "eventType": "DEPT_ACCEPT",
+      "actorId": "demo-roads-id",
+      "actorName": "Marcus Vance",
+      "actorRole": "DEPARTMENT_MANAGER",
+      "message": "Department manager Marcus Vance accepted the work order into the sector queue. SLA target countdown initiated.",
+      "createdAt": "2026-06-29T03:39:56.706Z"
+    },
+    "evt-p7xi8gr": {
+      "id": "evt-p7xi8gr",
+      "incidentId": "inc-test-transition-hojoevv",
+      "eventType": "DEPT_START_WORK",
+      "actorId": "demo-roads-id",
+      "actorName": "Marcus Vance",
+      "actorRole": "DEPARTMENT_MANAGER",
+      "message": "Maintenance crews successfully mobilized on-site. Repair operations initiated.",
+      "createdAt": "2026-06-29T03:39:56.722Z"
+    },
+    "evt-yepbhg4": {
+      "id": "evt-yepbhg4",
+      "incidentId": "inc-test-transition-hojoevv",
+      "eventType": "DEPT_SUBMIT_PROOF",
+      "actorId": "demo-roads-id",
+      "actorName": "Marcus Vance",
+      "actorRole": "DEPARTMENT_MANAGER",
+      "message": "Department submitted completion logs and uploaded repair evidence for inspection.",
+      "createdAt": "2026-06-29T03:39:56.750Z"
+    },
+    "evt-br1qgvg": {
+      "id": "evt-br1qgvg",
+      "incidentId": "inc-test-transition-hojoevv",
+      "eventType": "ADMIN_VERIFY_RESOLVE",
+      "actorId": "demo-admin-id",
+      "actorName": "Arthur Pendelton",
+      "actorRole": "ADMIN",
+      "message": "Admin physically verified proof photo and signed off, marking ticket fully RESOLVED.",
+      "createdAt": "2026-06-29T03:39:56.788Z"
     }
   },
   "workUpdates": {
@@ -1435,6 +1485,19 @@
         "https://images.unsplash.com/photo-1542013936693-8848e5744a70?auto=format&fit=crop&w=600&q=80"
       ],
       "createdAt": "2026-06-29T03:18:50.277Z"
+    },
+    "upd-a3lfyqk": {
+      "id": "upd-a3lfyqk",
+      "incidentId": "inc-test-transition-hojoevv",
+      "departmentId": "roads",
+      "authorId": "demo-roads-id",
+      "authorName": "Marcus Vance",
+      "note": "Repairs finished, photo attached",
+      "statusAfterUpdate": "RESOLUTION_EVIDENCE_SUBMITTED",
+      "evidenceUrls": [
+        "data:image/png;base64,dGVzdC1pbWFnZQ=="
+      ],
+      "createdAt": "2026-06-29T03:39:56.740Z"
     }
   },
   "notifications": {
@@ -1637,6 +1700,46 @@
       "incidentId": "inc-e7qmadb",
       "isRead": false,
       "createdAt": "2026-06-29T03:18:50.279Z"
+    },
+    "notif-wn5j6iu": {
+      "id": "notif-wn5j6iu",
+      "recipientId": "dept-roads",
+      "type": "DEPARTMENT_ASSIGNMENT",
+      "title": "New Maintenance Assignment",
+      "message": "Case CR-TEST-TRANS (POTHOLE) has been assigned to your sector.",
+      "incidentId": "inc-test-transition-hojoevv",
+      "isRead": false,
+      "createdAt": "2026-06-29T03:39:56.684Z"
+    },
+    "notif-a2inh02": {
+      "id": "notif-a2inh02",
+      "recipientId": "demo-citizen-id",
+      "type": "CASE_ACCEPTED",
+      "title": "Repairs Dispatched",
+      "message": "Veridale City Council has dispatched your case CR-TEST-TRANS to the active repair schedule.",
+      "incidentId": "inc-test-transition-hojoevv",
+      "isRead": false,
+      "createdAt": "2026-06-29T03:39:56.701Z"
+    },
+    "notif-lzb1yhd": {
+      "id": "notif-lzb1yhd",
+      "recipientId": "admin",
+      "type": "RESOLUTION_EVIDENCE_SUBMITTED",
+      "title": "Verification Needed",
+      "message": "Department completed repairs on CR-TEST-TRANS. Admin verification required.",
+      "incidentId": "inc-test-transition-hojoevv",
+      "isRead": false,
+      "createdAt": "2026-06-29T03:39:56.743Z"
+    },
+    "notif-s8284qn": {
+      "id": "notif-s8284qn",
+      "recipientId": "demo-citizen-id",
+      "type": "CASE_RESOLVED",
+      "title": "Issue Resolved!",
+      "message": "Veridale City has resolved report CR-TEST-TRANS! View repair details and closure notes.",
+      "incidentId": "inc-test-transition-hojoevv",
+      "isRead": false,
+      "createdAt": "2026-06-29T03:39:56.784Z"
     }
   },
   "departments": {
